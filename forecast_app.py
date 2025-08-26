@@ -38,18 +38,18 @@ if not data.empty:
         "Tickets Actual": "Tickets"
     })
 
-    # Convert numeric columns to floats
+    # Ensure numeric columns to floats
     numeric_cols = ["Revenue", "Tickets", "MaxTemp_F",
                     "Precipitation_Inches", "SeasonProgress"]
     for col in numeric_cols:
         if col in data.columns:
+            # Convert strings to floats; empty or invalid strings become NaN
             data[col] = pd.to_numeric(data[col], errors="coerce")
 
-    # Drop rows with missing actuals for model training
-    train_data = data.dropna(subset=["Revenue", "Tickets"])
-else:
-    st.error("Google Sheet is empty. Please add historical actuals to start training.")
-    st.stop()
+# Drop rows where target or feature numeric columns are NaN
+feature_cols = [c for c in data.columns if c not in [
+    "Revenue", "Tickets", "Date"]]
+train_data = data.dropna(subset=["Revenue", "Tickets"] + feature_cols)
 
 # One-hot encoding
 train_data = pd.get_dummies(
@@ -65,6 +65,10 @@ if "WeatherType_Sunny" in train_data.columns:
 X = train_data.drop(["Revenue", "Tickets", "Date"], axis=1)
 y_revenue = train_data["Revenue"]
 y_tickets = train_data["Tickets"]
+
+# Ensure all feature columns are numeric
+X = X.apply(pd.to_numeric, errors="coerce")
+X = X.fillna(0)  # Fill any remaining NaNs with 0
 
 # Train-test split
 X_train, X_test, y_revenue_train, y_revenue_test = train_test_split(
