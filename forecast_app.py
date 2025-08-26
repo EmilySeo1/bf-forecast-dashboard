@@ -38,6 +38,13 @@ if not data.empty:
         "Tickets Actual": "Tickets"
     })
 
+    # Convert numeric columns to floats
+    numeric_cols = ["Revenue", "Tickets", "MaxTemp_F",
+                    "Precipitation_Inches", "SeasonProgress"]
+    for col in numeric_cols:
+        if col in data.columns:
+            data[col] = pd.to_numeric(data[col], errors="coerce")
+
     # Drop rows with missing actuals for model training
     train_data = data.dropna(subset=["Revenue", "Tickets"])
 else:
