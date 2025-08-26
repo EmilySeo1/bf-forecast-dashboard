@@ -13,7 +13,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 # GOOGLE SHEETS SETUP
 SHEET_NAME = "BF_Forecast_Log"
-WORKSHEET_NAME = "ForecastLog"
+DATA_WORKSHEET = "Data"
+LOG_WORKSHEET = "ForecastLog"
 
 # Connect using service account
 scope = ["https://spreadsheets.google.com/feeds",
@@ -23,52 +24,36 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
 client = gspread.authorize(creds)
 
 # Open to Google Sheet
-sheet = client.open(SHEET_NAME).worksheet(WORKSHEET_NAME)
+data_sheet = client.open(SHEET_NAME).worksheet(DATA_WORKSHEET)
+log_sheet = client.open(SHEET_NAME).worksheet(LOG_WORKSHEET)
 
 # LOAD HISTORICAL DATA (with actuals, if available)
-data = pd.DataFrame(sheet.get_all_records())
+data = pd.DataFrame(data_sheet.get_all_records())
 
-if not data.empty:
-    # Convert dates
-    data["Date"] = pd.to_datetime(data["Date"])
+if data.empty:
+    st.error("Data worksheet is empty. Please add historical records.")
+    st.stop()
 
-    # Rename to match (Revenue Prediction vs Actual)
-    data = data.rename(columns={
-        "Revenue Actual": "Revenue",
-        "Tickets Actual": "Tickets"
-    })
-
-    # Ensure numeric columns to floats
-    numeric_cols = ["Revenue", "Tickets", "MaxTemp_F",
-                    "Precipitation_Inches", "SeasonProgress"]
-    for col in numeric_cols:
-        if col in data.columns:
-            # Convert strings to floats; empty or invalid strings become NaN
-            data[col] = pd.to_numeric(data[col], errors="coerce")
-
-# Drop rows where target or feature numeric columns are NaN
-feature_cols = [c for c in data.columns if c not in [
-    "Revenue", "Tickets", "Date"]]
-train_data = data.dropna(subset=["Revenue", "Tickets"] + feature_cols)
+# Convert types
+data["Date"] = pd.to_datetime(data["Date"])
+numeric_cols = ["Revenue", "Tickets", "MaxTemp_F",
+                "Precipitation_Inches", "SeasonProgress"]
+for col in numeric_cols:
+    if col in data.columns:
+        data[col] = pd.to_numeric(data[col], errors="coerce")
 
 # One-hot encoding
-train_data = pd.get_dummies(
-    train_data, columns=["DayOfWeek", "WeatherType"], drop_first=False)
+data = pd.get_dummies(
+    data, columns=["DayOfWeek", "WeatherType"], drop_first=False)
+if "DayOfWeek_Monday" in data.columns:
+    data = data.drop("DayOfWeek_Monday", axis=1)
+if "WeatherType_Sunny" in data.columns:
+    data = data.drop("WeatherType_Sunny", axis=1)
 
-# Drop baseline dummy variables to avoid multicollinearity
-if "DayOfWeek_Monday" in train_data.columns:
-    train_data = train_data.drop("DayOfWeek_Monday", axis=1)
-if "WeatherType_Sunny" in train_data.columns:
-    train_data = train_data.drop("WeatherType_Sunny", axis=1)
-
-# Split features and targets
-X = train_data.drop(["Revenue", "Tickets", "Date"], axis=1)
-y_revenue = train_data["Revenue"]
-y_tickets = train_data["Tickets"]
-
-# Ensure all feature columns are numeric
-X = X.apply(pd.to_numeric, errors="coerce")
-X = X.fillna(0)  # Fill any remaining NaNs with 0
+# Split features & targets
+X = data.drop(["Revenue", "Tickets", "Date"], axis=1)
+y_revenue = data["Revenue"]
+y_tickets = data["Tickets"]
 
 # Train-test split
 X_train, X_test, y_revenue_train, y_revenue_test = train_test_split(
@@ -85,12 +70,11 @@ tickets_model = RandomForestRegressor(
 # Evaluate
 revenue_pred_test = revenue_model.predict(X_test)
 tickets_pred_test = tickets_model.predict(X_test2)
-
 st.write("**Model Accuracy Check:**")
-st.write("Revenue RMSE:", np.sqrt(mean_squared_error(
-    y_revenue_test, revenue_pred_test)))
-st.write("Tickets RMSE:", np.sqrt(mean_squared_error(
-    y_tickets_test, tickets_pred_test)))
+st.write("Revenue RMSE:", np.sqrt(
+    mean_squared_error(y_revenue_test, revenue_pred_test)))
+st.write("Tickets RMSE:", np.sqrt(
+    mean_squared_error(y_tickets_test, tickets_pred_test)))
 
 # FETCH WEATHER FORECAST
 API_KEY = st.secrets["API_KEY"]
@@ -98,17 +82,14 @@ LOCATION = "Truckee, CA"
 
 url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{LOCATION}?unitGroup=us&key={API_KEY}&include=days&elements=datetime,tempmax,precip,preciptype"
 
-response = requests.get(url)
-forecast_json = response.json()
+forecast_json = requests.get(url).json()
 forecast_days = forecast_json["days"][:14]
 
 forecast_df = pd.DataFrame(forecast_days)
-forecast_df.rename(columns={
-    "tempmax": "MaxTemp_F",
-    "precip": "Precipitation_Inches"
-}, inplace=True)
+forecast_df.rename(columns={"tempmax": "MaxTemp_F",
+                   "precip": "Precipitation_Inches"}, inplace=True)
 
-# Build features for model
+# Build features
 forecast_df["WeatherType_Rain"] = forecast_df["preciptype"].apply(
     lambda x: 1 if x and "Rain" in str(x).lower() else 0)
 forecast_df["WeatherType_Snow"] = forecast_df["preciptype"].apply(
@@ -121,6 +102,7 @@ forecast_df = pd.get_dummies(
 if "DayOfWeek_Monday" in forecast_df.columns:
     forecast_df = forecast_df.drop("DayOfWeek_Monday", axis=1)
 
+# Season Progress
 today = dt.datetime.now().date()
 season_start = dt.date(today.year, 5, 1)
 forecast_df["datetime"] = pd.to_datetime(forecast_df["datetime"])
@@ -129,59 +111,56 @@ forecast_df["SeasonProgress"] = (
 
 forecast_X = forecast_df.reindex(columns=X.columns, fill_value=0)
 
-# Make predictions
+# Predict
 forecast_df["Predicted Revenue"] = revenue_model.predict(forecast_X)
 forecast_df["Predicted Tickets"] = tickets_model.predict(forecast_X)
 
 # LOG PREDICTIONS TO GOOGLE SHEET
 for _, row in forecast_df.iterrows():
     date_str = row["datetime"].strftime("%Y-%m-%d")
-
-    # Check if date already exists
-    existing = sheet.findall(date_str)
+    existing = log_sheet.findall(date_str)
     if not existing:
-        sheet.append_row([
+        log_sheet.append_row([
             date_str,
             row["MaxTemp_F"],
             row["Precipitation_Inches"],
-            "Rain" if row["WeatherType_Rain"] == 1 else (
-                "Snow" if row["WeatherType_Snow"] == 1 else "Sunny"),
+            "Rain" if row["WeatherType_Rain"] else (
+                "Snow" if row["WeatherType_Snow"] else "Sunny"),
             row["SeasonProgress"],
             row["Predicted Revenue"],
             row["Predicted Tickets"],
-            "",  # Revenue Actual (to be filled weekly)
-            "",  # Ticket Actual (to be filled weekly)
-            ""  # Variance filled later
+            "",  # Revenue Actual
+            "",  # Tickets Actual
+            "",  # Revenue Variance
+            ""   # Tickets Variance
         ])
 
 # STREAMLIT DASHBOARD
 st.title("14-Day Revenue & Tickets Forecast Dashboard")
-st.write("Updated daily with Visual Crossing API. Model retrains on every restart.")
+st.write("Auto-retraining with updated actuals daily.")
 
-# Current Forecast
+# Upcoming forecast
 st.subheader("Upcoming Forecast")
 st.dataframe(
     forecast_df[["datetime", "Predicted Revenue", "Predicted Tickets"]])
 
+# Forecast trends
 st.subheader("Forecast Trends")
 chart_df = forecast_df[["datetime",
                         "Predicted Revenue", "Predicted Tickets"]].copy()
 chart_df["datetime"] = pd.to_datetime(chart_df["datetime"])
-st.line_chart(
-    chart_df.set_index("datetime"),
-    y=["Predicted Revenue", "Predicted Tickets"],
-    use_container_width=True
-)
+st.line_chart(chart_df.set_index("datetime"), y=[
+              "Predicted Revenue", "Predicted Tickets"], use_container_width=True)
 
-# Historical Log (with variance)
+# Historical log
 st.subheader("Historical Predictions vs Actuals")
-log_df = pd.DataFrame(sheet.get_all_records())
+log_df = pd.DataFrame(log_sheet.get_all_records())
 if not log_df.empty:
     log_df["Date"] = pd.to_datetime(log_df["Date"])
-    log_df["Revenue Variance"] = log_df["Revenue Actual"].replace(
-        "", np.nan).astype(float) - log_df["Revenue Prediction"].astype(float)
-    log_df["Tickets Variance"] = log_df["Tickets Actual"].replace(
-        "", np.nan).astype(float) - log_df["Tickets Prediction"].astype(float)
+    log_df["Revenue Variance"] = pd.to_numeric(
+        log_df["Revenue Actual"], errors="coerce") - pd.to_numeric(log_df["Predicted Revenue"], errors="coerce")
+    log_df["Tickets Variance"] = pd.to_numeric(
+        log_df["Tickets Actual"], errors="coerce") - pd.to_numeric(log_df["Predicted Tickets"], errors="coerce")
     st.dataframe(log_df)
 
 # Feature Importance Plots
