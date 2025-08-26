@@ -146,7 +146,7 @@ forecast_display = forecast_df.copy()
 forecast_display["datetime"] = forecast_display["datetime"].dt.strftime(
     "%Y-%m-%d")
 st.dataframe(
-    forecast_display[["dateimte", "Predicted Revenue", "Predicted Tickets"]])
+    forecast_display[["datetime", "Predicted Revenue", "Predicted Tickets"]])
 
 # Historical log
 st.subheader("Historical Predictions vs Actuals")
