@@ -31,17 +31,18 @@ data = pd.DataFrame(sheet.get_all_records())
 if not data.empty:
     # Convert dates
     data["Date"] = pd.to_datetime(data["Date"])
+
+    # Rename to match (Revenue Prediction vs Actual)
+    data = data.rename(columns={
+        "Revenue Actual": "Revenue",
+        "Tickets Actual": "Tickets"
+    })
+
     # Drop rows with missing actuals for model training
     train_data = data.dropna(subset=["Revenue", "Tickets"])
 else:
     st.error("Google Sheet is empty. Please add historical actuals to start training.")
     st.stop()
-
-# Rename to match (Revenue Prediction vs Actual)
-train_data = train_data.rename(columns={
-    "Revenue Actual": "Revenue",
-    "Tickets Actual": "Tickets"
-})
 
 # One-hot encoding
 train_data = pd.get_dummies(
