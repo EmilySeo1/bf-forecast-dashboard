@@ -142,16 +142,11 @@ st.write("Auto-retraining with updated actuals daily.")
 
 # Upcoming forecast
 st.subheader("Upcoming Forecast")
+forecast_display = forecast_df.copy()
+forecast_display["datetime"] = forecast_display["datetime"].dt.strftime(
+    "%Y-%m-%d")
 st.dataframe(
-    forecast_df[["datetime", "Predicted Revenue", "Predicted Tickets"]])
-
-# Forecast trends
-st.subheader("Forecast Trends")
-chart_df = forecast_df[["datetime",
-                        "Predicted Revenue", "Predicted Tickets"]].copy()
-chart_df["datetime"] = pd.to_datetime(chart_df["datetime"])
-st.line_chart(chart_df.set_index("datetime"), y=[
-              "Predicted Revenue", "Predicted Tickets"], use_container_width=True)
+    forecast_display[["dateimte", "Predicted Revenue", "Predicted Tickets"]])
 
 # Historical log
 st.subheader("Historical Predictions vs Actuals")
@@ -162,7 +157,19 @@ if not log_df.empty:
         log_df["Revenue Actual"], errors="coerce") - pd.to_numeric(log_df["Predicted Revenue"], errors="coerce")
     log_df["Tickets Variance"] = pd.to_numeric(
         log_df["Tickets Actual"], errors="coerce") - pd.to_numeric(log_df["Predicted Tickets"], errors="coerce")
-    st.dataframe(log_df)
+    log_display = log_df.copy()
+    log_display["Date"] = log_display["Date"].dt.strftime("%Y-%m-%d")
+    st.dataframe(log_display[["Date", "Predicted Revenue", "Predicted Tickets",
+                 "Revenue Actual", "Tickets Actual", "Revenue Variance", "Tickets Variance"]])
+
+
+# Forecast trends
+st.subheader("Forecast Trends")
+chart_df = forecast_df[["datetime",
+                        "Predicted Revenue", "Predicted Tickets"]].copy()
+chart_df["datetime"] = pd.to_datetime(chart_df["datetime"])
+st.line_chart(chart_df.set_index("datetime"), y=[
+              "Predicted Revenue", "Predicted Tickets"], use_container_width=True)
 
 # Feature Importance Plots
 
