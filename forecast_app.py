@@ -70,10 +70,11 @@ tickets_model = RandomForestRegressor(
 # Evaluate
 revenue_pred_test = revenue_model.predict(X_test)
 tickets_pred_test = tickets_model.predict(X_test2)
-st.write("**Model Accuracy Check:**")
-st.write("Revenue RMSE:", np.sqrt(
+
+print("**Model Accuracy Check:**")
+print("Revenue RMSE:", np.sqrt(
     mean_squared_error(y_revenue_test, revenue_pred_test)))
-st.write("Tickets RMSE:", np.sqrt(
+print("Tickets RMSE:", np.sqrt(
     mean_squared_error(y_tickets_test, tickets_pred_test)))
 
 # FETCH WEATHER FORECAST
