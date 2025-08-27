@@ -116,11 +116,31 @@ forecast_X = forecast_df.reindex(columns=X.columns, fill_value=0)
 forecast_df["Predicted Revenue"] = revenue_model.predict(forecast_X)
 forecast_df["Predicted Tickets"] = tickets_model.predict(forecast_X)
 
-# LOG PREDICTIONS TO GOOGLE SHEET
+# LOG PREDICTIONS TO GOOGLE SHEET (no duplicates, update if exists)
+log_df = pd.DataFrame(log_sheet.get_all_records())
+
 for _, row in forecast_df.iterrows():
     date_str = row["datetime"].strftime("%Y-%m-%d")
-    existing = log_sheet.findall(date_str)
-    if not existing:
+
+    if date_str in log_df["Date"].values:
+        # Update existing row (preserve actuals)
+        row_index = log_df[log_df["Date"] == date_str].index[0] + 2
+        log_sheet.update(f"A{row_index}:K{row_index}", [[
+            date_str,
+            row["MaxTemp_F"],
+            row["Precipitation_Inches"],
+            "Rain" if row["WeatherType_Rain"] else (
+                "Snow" if row["WeatherType_Snow"] else "Sunny"),
+            row["SeasonProgress"],
+            row["Predicted Revenue"],
+            row["Predicted Tickets"],
+            log_df.at[row_index-2, "Revenue Actual"],
+            log_df.at[row_index-2, "Tickets Actual"],
+            log_df.at[row_index-2, "Revenue Variance"],
+            log_df.at[row_index-2, "Tickets Variance"]
+        ]])
+    else:
+        # Append new row
         log_sheet.append_row([
             date_str,
             row["MaxTemp_F"],
@@ -130,10 +150,10 @@ for _, row in forecast_df.iterrows():
             row["SeasonProgress"],
             row["Predicted Revenue"],
             row["Predicted Tickets"],
-            "",  # Revenue Actual
-            "",  # Tickets Actual
-            "",  # Revenue Variance
-            ""   # Tickets Variance
+            "",  # Revenue Actual (manually filled weekly)
+            "",  # Tickets Actual (manuall filled weekly)
+            "",  # Revenue Variance (calculated in Google Sheets)
+            ""  # Tickets Variance (calculated in Google Sheets)
         ])
 
 # HOURLY BREAKDOWN
