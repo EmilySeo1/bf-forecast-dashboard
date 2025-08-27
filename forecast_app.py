@@ -136,6 +136,34 @@ for _, row in forecast_df.iterrows():
             ""   # Tickets Variance
         ])
 
+# HOURLY BREAKDOWN
+hourly_df = pd.read_excel(
+    "BF - Hourly Sales Breakdown.xlsx", sheet_name="Sheet1")
+hourly_df.rename(columns={
+    "Day Of Week": "DayOfWeek",
+    "Sale Hour": "Hour",
+    "Proportion of Sales per Hour": "Proportion"
+}, inplace=True)
+hourly_df["DayOfWeek"] = hourly_df["DayOfWeek"].str.strip()
+
+# Expand forecast_df into hourly
+hourly_forecast_list = []
+for _, row in forecast_df.iterrows():
+    day_name = row["datetime"].day_name()
+    day_props = hourly_df[hourly_df["DayOfWeek"] == day_name]
+
+    for _, h in day_props.iterrows():
+        hour_int = int(h["Hour"])
+        hourly_forecast_list.append({
+            "Date": row["datetime"].strftime("%Y-%m-%d"),
+            "Hour": f"{hour_int:02d}:00",  # formats as 11:00, 12:00, etc.
+            "Predicted Revenue Hourly": row["Predicted Revenue"] * h["Proportion"],
+            "Predicted Tickets Hourly": row["Predicted Tickets"] * h["Proportion"]
+        })
+
+hourly_forecast_df = pd.DataFrame(
+    hourly_forecast_list).sort_values(["Date", "Hour"])
+
 # STREAMLIT DASHBOARD
 st.title("14-Day Revenue & Tickets Forecast Dashboard")
 st.write("Auto-retraining with updated actuals daily.")
@@ -148,20 +176,56 @@ forecast_display["Date"] = forecast_display["datetime"].dt.strftime(
 st.dataframe(
     forecast_display[["Date", "Predicted Revenue", "Predicted Tickets"]])
 
-# Historical log
-st.subheader("Historical Predictions vs Actuals")
-log_df = pd.DataFrame(log_sheet.get_all_records())
-if not log_df.empty:
-    log_df["Date"] = pd.to_datetime(log_df["Date"])
-    log_df["Revenue Variance"] = pd.to_numeric(
-        log_df["Revenue Actual"], errors="coerce") - pd.to_numeric(log_df["Predicted Revenue"], errors="coerce")
-    log_df["Tickets Variance"] = pd.to_numeric(
-        log_df["Tickets Actual"], errors="coerce") - pd.to_numeric(log_df["Predicted Tickets"], errors="coerce")
-    log_display = log_df.copy()
-    log_display["Date"] = log_display["Date"].dt.strftime("%Y-%m-%d")
-    st.dataframe(log_display[["Date", "Predicted Revenue", "Predicted Tickets",
-                 "Revenue Actual", "Tickets Actual", "Revenue Variance", "Tickets Variance"]])
+# Download upcoming forecast
+st.subheader("Download Forecast")
+csv_buffer = io.StringIO()
+forecast_df.to_csv(csv_buffer, index=False)
+st.download_button(
+    label="📥 Download Forecast as CSV",
+    data=csv_buffer.getvalue(),
+    file_name="14_day_forecast.csv",
+    mime="text/csv"
+)
 
+# Hourly Forecast
+st.subheader("Hourly Forecast (11AM-8PM)")
+
+# Default to today's date if availble, else first date in list
+today_str = dt.datetime.now().strftime("%Y-%m-%d")
+date_options = hourly_forecast_df["Date"].unique()
+
+default_date = today_str if today_str in date_options else date_options[0]
+
+selected_date = st.selectbox(
+    "Select a date",
+    date_options,
+    index=list(date_options).index(default_date)
+)
+
+filtered_hourly = hourly_forecast_df[hourly_forecast_df["Date"]
+                                     == selected_date]
+
+st.dataframe(filtered_hourly)
+
+# Hourly Line Chart
+st.line_chart(
+    filtered_hourly.set_index(
+        "Hour")[["Predicted Revenue Hourly", "Predicted Tickets Hourly"]],
+    use_container_width=True
+)
+
+# Donwload hourly forecast
+st.subheader("Download Hourly Forecast Breakdown")
+
+# Full 14-day file
+csv_buffer_all = io.StringIO()
+hourly_forecast_df.to_csv(csv_buffer_all, index=False)
+st.download_button(
+    label="📥 Download Full 14-Day Hourly Forecast as CSV",
+    data=csv_buffer_all.getvalue(),
+    file_name="hourly_forecast_14_days.csv",
+    mime="text/csv"
+)
 
 # Forecast trends
 st.subheader("Forecast Trends")
@@ -197,13 +261,16 @@ st.write("**Tickets Model Feature Importance**")
 plot_feature_importance(tickets_model, X.columns,
                         "Tickets Model Feature Importance")
 
-# Download
-st.subheader("Download Forecast")
-csv_buffer = io.StringIO()
-forecast_df.to_csv(csv_buffer, index=False)
-st.download_button(
-    label="📥 Download Forecast as CSV",
-    data=csv_buffer.getvalue(),
-    file_name="14_day_forecast.csv",
-    mime="text/csv"
-)
+# Historical log
+st.subheader("Historical Predictions vs Actuals")
+log_df = pd.DataFrame(log_sheet.get_all_records())
+if not log_df.empty:
+    log_df["Date"] = pd.to_datetime(log_df["Date"])
+    log_df["Revenue Variance"] = pd.to_numeric(
+        log_df["Revenue Actual"], errors="coerce") - pd.to_numeric(log_df["Predicted Revenue"], errors="coerce")
+    log_df["Tickets Variance"] = pd.to_numeric(
+        log_df["Tickets Actual"], errors="coerce") - pd.to_numeric(log_df["Predicted Tickets"], errors="coerce")
+    log_display = log_df.copy()
+    log_display["Date"] = log_display["Date"].dt.strftime("%Y-%m-%d")
+    st.dataframe(log_display[["Date", "Predicted Revenue", "Predicted Tickets",
+                 "Revenue Actual", "Tickets Actual", "Revenue Variance", "Tickets Variance"]])
