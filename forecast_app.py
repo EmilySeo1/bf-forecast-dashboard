@@ -176,6 +176,14 @@ forecast_display["Date"] = forecast_display["datetime"].dt.strftime(
 st.dataframe(
     forecast_display[["Date", "Predicted Revenue", "Predicted Tickets"]])
 
+# Forecast trends
+st.subheader("Forecast Trends")
+chart_df = forecast_df[["datetime",
+                        "Predicted Revenue", "Predicted Tickets"]].copy()
+chart_df["datetime"] = pd.to_datetime(chart_df["datetime"])
+st.line_chart(chart_df.set_index("datetime"), y=[
+              "Predicted Revenue", "Predicted Tickets"], use_container_width=True)
+
 # Download upcoming forecast
 st.subheader("Download Forecast")
 csv_buffer = io.StringIO()
@@ -215,8 +223,7 @@ st.line_chart(
 )
 
 # Donwload hourly forecast
-st.subheader("Download Hourly Forecast Breakdown")
-
+st.subheader("Download Hourly Forecast")
 # Full 14-day file
 csv_buffer_all = io.StringIO()
 hourly_forecast_df.to_csv(csv_buffer_all, index=False)
@@ -226,14 +233,6 @@ st.download_button(
     file_name="hourly_forecast_14_days.csv",
     mime="text/csv"
 )
-
-# Forecast trends
-st.subheader("Forecast Trends")
-chart_df = forecast_df[["datetime",
-                        "Predicted Revenue", "Predicted Tickets"]].copy()
-chart_df["datetime"] = pd.to_datetime(chart_df["datetime"])
-st.line_chart(chart_df.set_index("datetime"), y=[
-              "Predicted Revenue", "Predicted Tickets"], use_container_width=True)
 
 # Feature Importance Plots
 
