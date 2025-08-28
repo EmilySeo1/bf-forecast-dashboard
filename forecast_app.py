@@ -186,7 +186,7 @@ hourly_forecast_df = pd.DataFrame(
 
 # STREAMLIT DASHBOARD
 st.title("14-Day Revenue & Tickets Forecast Dashboard")
-st.write("Auto-retraining with updated actuals daily.")
+st.write("Updated daily and auto-retraining.")
 
 # Upcoming forecast
 st.subheader("Upcoming Forecast")
